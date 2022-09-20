@@ -47,6 +47,7 @@ class SimilarCompare(object):
         # 生成日期列、时间列
         df['date'] = df['create_time'].dt.date
         df['h-m-s'] = df['create_time'].dt.time
+        df.fillna(method="ffill", inplace = True)
         self.df_prepare = df
         return self.df_prepare
 
@@ -61,7 +62,7 @@ class SimilarCompare(object):
 
         def sum_columns(columns):
             label_1 = columns
-            label_2 = list(data_sum[label_1].sum(axis=1))
+            label_2 = list(data_sum[label_1].sum(axis=1))  # 按照列相加
             return label_2
 
         data_sum['风机合相有功功率和(kw)'] = sum_columns(['zsjc0054_1_风机合相有功功率Pt', 'zsjc0131_2_风机合相有功功率Pt',
@@ -73,10 +74,10 @@ class SimilarCompare(object):
                                                'zsjc0713_3号冷冻泵电功率', 'zsjc0721_4号冷冻泵电功率'])
         data_sum['风机主机冷冻泵电功率和(kw)'] = sum_columns(['风机合相有功功率和(kw)', '主机电功率和(kw)', '冷冻泵电功率和(kw)'])
 
-        data_sum['风机合相有功功率平均值之和(kw)'] = round(data_sum['风机合相有功功率和(kw)'] / 60, 2)
-        data_sum['主机电功率平均值之和(kw)'] = round(data_sum['主机电功率和(kw)'] / 60, 2)
-        data_sum['冷冻泵电功率平均值之和(kw)'] = round(data_sum['冷冻泵电功率和(kw)'] / 60, 2)
-        data_sum['风机主机冷冻泵电功率平均值之和(kw)'] = round(data_sum['风机主机冷冻泵电功率和(kw)'] / 60, 2)
+        data_sum['风机总能耗(kw)'] = round(data_sum['风机合相有功功率和(kw)'] / 60, 2)
+        data_sum['主机总能耗(kw)'] = round(data_sum['主机电功率和(kw)'] / 60, 2)
+        data_sum['冷冻泵总能耗(kw)'] = round(data_sum['冷冻泵电功率和(kw)'] / 60, 2)
+        data_sum['风机主机冷冻泵总能耗(kw)'] = round(data_sum['风机主机冷冻泵电功率和(kw)'] / 60, 2)
 
         self.pow_data = data_sum
         return self.pow_data
@@ -104,6 +105,7 @@ class SimilarCompare(object):
             average_delt_temp[i] = temp_day['delt_temp'].mean(axis=0)
             if abs(average_delt_temp[i]) < 0.5:
                 date_list_1.append(i)
+
         temp_corr_compare = {}  # 用于存放干球温度相关系数
         hum_corr_compare = {}  # 用于存放相对湿度相关系数
         for j in date_list_1:
@@ -186,31 +188,24 @@ class SimilarCompare(object):
         power_merge.set_index(['h-m-s'], inplace=True)
 
 
-        # 循环所有需要处理的列,对于异常值进行填充
-        def data_null(df):
-            data = df
-            n_col = [-1,-2,-3, -20,-21,-22]
-            print(data.iloc[:,-20])
-            # n_col = data.shape[1]
-            for c in n_col:
-                data_processing = pd.DataFrame()
-                data_processing['data'] = data.iloc[:, c].copy()
-                # 对于异常值在一定条件下进行填充
-                nan_r, _ = np.where(data_processing == 0)
-                df1 = pd.DataFrame(enumerate(nan_r))
-                df1['sub'] = df1.loc[:, 1] - df1.loc[:, 0]
-                df2 = df1.groupby('sub')
+        # 单个泵逐时功率比较图
+        plt.figure(dpi=200, figsize=(10, 5))
+        plt.plot(power_merge['zsjc0697_1号冷冻泵电功率_x'], 'g', linewidth=0.5, label='Choose Day:{},1号冷冻泵'.format(date))
+        plt.plot(power_merge['zsjc0705_2号冷冻泵电功率_x'], color ='#008B8B', linewidth=0.5, label='Choose Day:{},2号冷冻泵'.format(date))
+        plt.plot(power_merge['zsjc0713_3号冷冻泵电功率_x'], color ='#00EEEE', linewidth=0.5, label='Choose Day:{},3号冷冻泵'.format(date))
+        plt.plot(power_merge['zsjc0721_4号冷冻泵电功率_x'], color ='#00C5CD', linewidth=0.5, label='Choose Day:{},4号冷冻泵'.format(date))
+        plt.plot(power_merge['zsjc0697_1号冷冻泵电功率_y'], 'r', linewidth=0.5, label='Choose Day:{},1号冷冻泵'.format(date))
+        plt.plot(power_merge['zsjc0705_2号冷冻泵电功率_y'], color ='#FFCC00', linewidth=0.5, label='Choose Day:{},2号冷冻泵'.format(date))
+        plt.plot(power_merge['zsjc0713_3号冷冻泵电功率_y'], color ='#FF9900', linewidth=0.5, label='Choose Day:{},3号冷冻泵'.format(date))
+        plt.plot(power_merge['zsjc0721_4号冷冻泵电功率_y'], color ='#FF6600', linewidth=0.5, label='Choose Day:{},4号冷冻泵'.format(date))
 
-                nan_list = []
-                for k, g in df2:
-                    find_list = list(g.iloc[:, 1])
-                    if len(find_list) < 4:
-                        nan_list = nan_list + find_list
-
-                for i in nan_list:
-                    data.iloc[i, c] = data.iloc[i - 1, c]
-            return (data)
-        power_merge = data_null(power_merge)
+        plt.legend(fontsize=8)
+        plt.xlabel('Time', fontsize=10)
+        plt.xticks(range(0, len(power_merge), 60), rotation=30)
+        plt.ylabel('Power/kW', fontsize=10)
+        plt.title('Comparison between power of pumps', fontsize=12)
+        plt.tick_params(labelsize=8)
+        plt.tight_layout()
 
         # 风机逐时功率比较图
         plt.figure(dpi=200, figsize=(10, 5))
@@ -275,7 +270,7 @@ class SimilarCompare(object):
         bar_width = 0.4
 
         plt.subplot(1, 1, 1)
-        xlabel2 = ['风机合相有功功率平均值之和(kw)', '主机电功率平均值之和(kw)', '冷冻泵电功率平均值之和(kw)', '风机主机冷冻泵电功率平均值之和(kw)']
+        xlabel2 = ['风机总能耗(kw)', '主机总能耗(kw)', '冷冻泵总能耗(kw)', '风机主机冷冻泵总能耗(kw)']
         kwh1 = list(similar_power_data.loc[date, xlabel2])
         kwh2 = list(similar_power_data.loc[similar_date, xlabel2])
         x2 = np.arange(len(xlabel2))
@@ -287,7 +282,7 @@ class SimilarCompare(object):
         # x轴刻度标签位置不进行计算
         plt.xticks(x2, labels=xlabel2)
         plt.legend(fontsize=8)
-        plt.title('各类设备的平均功率对比柱状图', fontsize=12)
+        plt.title('各类设备的总能耗对比柱状图', fontsize=12)
         plt.tick_params(labelsize=8)
         plt.show()
         return None
